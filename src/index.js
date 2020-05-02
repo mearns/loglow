@@ -78,6 +78,8 @@ function configRoot(config) {
     Object.assign(rootConfig, config);
 }
 
+let currentLock = null;
+
 /**
  * Top-level API for configuring a logger by name. This also provides
  * a base config for all loggers that have the given name as a prefix.
@@ -85,8 +87,60 @@ function configRoot(config) {
  * @param {object} config The logging config.
  */
 function config(loggerName, config) {
-    configs.set(loggerName, config);
-    clearImplementations(loggerName);
+    if (!currentLock) {
+        configWithLock(loggerName, config, null);
+    }
+}
+
+function configWithLock(loggerName, config, lock) {
+    if (lock === currentLock) {
+        configs.set(loggerName, config);
+        clearImplementations(loggerName);
+    }
+}
+
+/**
+ * The top-level app should lock the configuration before loading any
+ * other modules, so that no other module can override your config.
+ *
+ * On successful lock, returns an object with two methods:
+ * `unlock()` which unlocks configuration (which would be kind of a
+ * weird use case); `config(loggerName, config)` which can be used to
+ * configure logging despite the lock. A useful pattern is to require this
+ * module and get the lock, then require whatever other packages you need.
+ * It's locked so those other packages can't change config, but you can
+ * configure it after the fact using the acquired lock.
+ *
+ * If logging is already locked, you'll get back an identical object except
+ * all the methods are no-ops. That way your package doesn't need to know
+ * whether it's the top or not. If you really want to know (e.g., for debugging
+ * if your configuration isn't taking effect), you can check the `acquired`
+ * field.
+ *
+ * @param {string} [name] optionally specify a name for the lock.
+ * It's useful for debugging.
+ */
+function lock(name = "loglow-lock") {
+    if (currentLock) {
+        return {
+            unlock: () => {},
+            config: () => {},
+            acquired: false
+        };
+    }
+    const key = Symbol(name);
+    currentLock = key;
+    return {
+        unlock: () => {
+            if (currentLock === key) {
+                currentLock = null;
+            }
+        },
+        config: (loggerName, config) => {
+            configWithLock(loggerName, config, key);
+        },
+        acquired: true
+    };
 }
 
 function getConfig(loggerName) {
@@ -267,5 +321,6 @@ function getLogger(loggerName) {
 
 module.exports = {
     config,
-    getLogger
+    getLogger,
+    lock
 };

@@ -8,5 +8,6 @@ loglow.config("example/a", {
     level: "debug",
     enable: false
 });
+loglow.lock();
 
 b.bFunc();
