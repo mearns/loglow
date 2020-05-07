@@ -5,6 +5,7 @@
 const {
     resetConfig,
     setConfigurator,
+    setRootConfigurator,
     getImplementation,
     lock
 } = require("../../../src/lib/config");
@@ -14,7 +15,7 @@ const { expect } = require("chai");
 const { propertySetter } = require("../../../src/lib/config-util");
 
 describe("config module", () => {
-    beforeEach(() => {
+    afterEach(() => {
         resetConfig();
     });
 
@@ -36,6 +37,33 @@ describe("config module", () => {
             e: true,
             enabled: true
         });
+    });
+
+    it("should apply the root configurator to all implementations", () => {
+        setRootConfigurator(propertySetter("is-root", "yeh"));
+        const { config } = getImplementation("a/b/c");
+        expect(config).to.include({
+            "is-root": "yeh"
+        });
+    });
+
+    it("should be fine if the root configurator is null", () => {
+        setRootConfigurator(null);
+        setConfigurator("a/b", propertySetter("b", true));
+        const { config } = getImplementation("a/b/c");
+        expect(config).to.include({
+            b: true,
+            enabled: true
+        });
+    });
+
+    it("should not set enabled if only the root configurator applies", () => {
+        setRootConfigurator(propertySetter("is-root", "yeh"));
+        const { config } = getImplementation("a/b/c");
+        expect(config).to.include({
+            "is-root": "yeh"
+        });
+        expect(config).to.not.haveOwnProperty("enabled");
     });
 
     it("should get the same implementation twice", () => {
@@ -92,6 +120,16 @@ describe("config module", () => {
                 c: true,
                 enabled: true
             });
+        });
+
+        it("should not allow the root configurator to be changed when locked", () => {
+            setRootConfigurator(propertySetter("root", true));
+            const { config } = getImplementation("a/b/c");
+            expect(config).to.include({
+                c: true,
+                enabled: true
+            });
+            expect(config).to.not.haveOwnProperty("root");
         });
 
         it("should not allow a new lock to change configuration when already locked", () => {

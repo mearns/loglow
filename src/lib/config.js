@@ -4,6 +4,7 @@ module.exports = {
     resetConfig,
     getImplementation,
     setConfigurator,
+    setRootConfigurator,
     lock
 };
 
@@ -28,6 +29,10 @@ function getConfig(loggerName) {
  */
 function setConfigurator(loggerName, configurator) {
     setConfiguratorWithLock(loggerName, configurator, null);
+}
+
+function setRootConfigurator(configurator) {
+    setRootConfiguratorWithLock(configurator, null);
 }
 
 /**
@@ -150,6 +155,12 @@ function clearImplementations(loggerName) {
     }
 }
 
+function clearAlImplementations() {
+    implementationMap.clear();
+    knownImplementations.present = false;
+    knownImplementations.children.clear();
+}
+
 /**
  * Get the implementation for the logger, creating a new one if it doesn't
  * exist.
@@ -219,6 +230,13 @@ function setConfiguratorWithLock(loggerName, configurator, lock) {
     if (currentLock === null || lock === currentLock) {
         configurators.set(loggerName, configurator);
         clearImplementations(loggerName);
+    }
+}
+
+function setRootConfiguratorWithLock(configurator, lock) {
+    if (currentLock === null || lock === currentLock) {
+        configurators.set(ROOT, configurator);
+        clearAlImplementations();
     }
 }
 
