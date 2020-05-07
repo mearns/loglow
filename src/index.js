@@ -25,7 +25,7 @@ function getLogger(loggerName) {
 }
 
 module.exports = {
-    config,
+    config: setConfig,
     getLogger,
     lock
 };
