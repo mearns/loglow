@@ -26,13 +26,21 @@ function getConfig(loggerName) {
  * a base config for all loggers that have the given name as a prefix.
  * @param {string} loggerName The name of the logger to configure.
  * @param {(config) => config} configurator Configurator for the loggers.
+ * @exported
  */
 function setConfigurator(loggerName, configurator) {
-    setConfiguratorWithLock(loggerName, configurator, null);
+    setConfiguratorWithLock(
+        loggerName,
+        wrapConfigurator(configurator, setConfigurator),
+        null
+    );
 }
 
 function setRootConfigurator(configurator) {
-    setRootConfiguratorWithLock(configurator, null);
+    setRootConfiguratorWithLock(
+        wrapConfigurator(configurator, setRootConfigurator),
+        null
+    );
 }
 
 /**
@@ -62,21 +70,34 @@ function lock(name = "loglow-lock") {
         return {
             unlock: () => {},
             setConfigurator: () => {},
+            setRootConfigurator: () => {},
             resetConfig: () => {},
             acquired: false
         };
     }
     const key = Symbol(name);
     currentLock = key;
+    const localSetConfigurator = (loggerName, configurator) => {
+        setConfiguratorWithLock(
+            loggerName,
+            wrapConfigurator(configurator, localSetConfigurator),
+            key
+        );
+    };
+    const localSetRootConfigurator = configurator => {
+        setRootConfiguratorWithLock(
+            wrapConfigurator(configurator, localSetRootConfigurator),
+            key
+        );
+    };
     return {
         unlock: () => {
             if (currentLock === key) {
                 currentLock = null;
             }
         },
-        setConfigurator: (loggerName, config) => {
-            setConfiguratorWithLock(loggerName, config, key);
-        },
+        setConfigurator: localSetConfigurator,
+        setRootConfigurator: localSetRootConfigurator,
         resetConfig: () => {
             resetConfigWithLock(key);
         },
@@ -298,4 +319,51 @@ function getConfigPaths(loggerName) {
  */
 function splitLoggerName(loggerName) {
     return [...loggerName.split("/")];
+}
+
+function overrideStack(error, stack) {
+    try {
+        const descriptors = {};
+        for (const propName in error) {
+            descriptors[propName] = {
+                get: () => error[propName]
+            };
+        }
+        descriptors.stack = {
+            value: stack
+        };
+        return Object.create(error, descriptors);
+    } catch (whoops) {
+        return error;
+    }
+}
+
+function splitStack(stack) {
+    const [header, ...callStack] = stack.split(/\n/);
+    return [header, callStack.join("\n")];
+}
+
+function wrapConfigurator(func, nonUserCodeEntryPoint) {
+    if (!func) {
+        return null;
+    }
+    const sourceError = {};
+    if (Error.captureStackTrace) {
+        Error.captureStackTrace(sourceError, nonUserCodeEntryPoint);
+    }
+    return cfg => {
+        try {
+            return func(cfg);
+        } catch (error) {
+            if (typeof error.stack === "string") {
+                const [header, callStack] = splitStack(error.stack);
+                const [, sourceStack] = splitStack(sourceError.stack || "");
+                throw overrideStack(
+                    error,
+                    `${header}\n${sourceStack}\n  called:\n${callStack}`
+                );
+            }
+            throw error;
+        }
+    };
 }
