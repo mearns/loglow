@@ -28,11 +28,11 @@ function getConfig(loggerName) {
  * @param {(config) => config} configurator Configurator for the loggers.
  */
 function setConfigurator(loggerName, configurator) {
-    setConfiguratorWithLock(loggerName, configurator, null);
+    setConfiguratorWithLock(loggerName, wrapConfigurator(configurator), null);
 }
 
 function setRootConfigurator(configurator) {
-    setRootConfiguratorWithLock(configurator, null);
+    setRootConfiguratorWithLock(wrapConfigurator(configurator), null);
 }
 
 /**
@@ -62,6 +62,7 @@ function lock(name = "loglow-lock") {
         return {
             unlock: () => {},
             setConfigurator: () => {},
+            setRootConfigurator: () => {},
             resetConfig: () => {},
             acquired: false
         };
@@ -74,8 +75,15 @@ function lock(name = "loglow-lock") {
                 currentLock = null;
             }
         },
-        setConfigurator: (loggerName, config) => {
-            setConfiguratorWithLock(loggerName, config, key);
+        setConfigurator: (loggerName, configurator) => {
+            setConfiguratorWithLock(
+                loggerName,
+                wrapConfigurator(configurator),
+                key
+            );
+        },
+        setRootConfigurator: configurator => {
+            setRootConfiguratorWithLock(wrapConfigurator(configurator), key);
         },
         resetConfig: () => {
             resetConfigWithLock(key);
@@ -298,4 +306,23 @@ function getConfigPaths(loggerName) {
  */
 function splitLoggerName(loggerName) {
     return [...loggerName.split("/")];
+}
+
+function wrapConfigurator(func) {
+    const sourceError = {};
+    // XXX: Left off here....need to make this more portable or at least safer.
+    // XXX: More importantly, need to tweak this a bit to strip off one more stack frame, and remove the first line.
+    // something like "$Name: $message\n${sourceStack}\n  called from: ${caughtStack}"
+    Error.captureStackTrace(sourceError, wrapConfigurator);
+    sourceStack = sourceError.stack;
+    return cfg => {
+        try {
+            return func(cfg);
+        } catch (error) {
+            if (typeof error.stack === "string") {
+                error.stack = `${error.stack}\n  originating from: ${sourceStack}`;
+            }
+            throw error;
+        }
+    };
 }
