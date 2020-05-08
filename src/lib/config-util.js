@@ -2,8 +2,18 @@ module.exports = {
     propertySetter,
     propertyAppender,
     propertyDefaulter,
-    propertyDeleter
+    propertyDeleter,
+    compose
 };
+
+function compose(...configurators) {
+    return cfg => {
+        for (const configurator of configurators) {
+            cfg = configurator(cfg);
+        }
+        return cfg;
+    };
+}
 
 function propertyDeleter(propName) {
     return cfg => {

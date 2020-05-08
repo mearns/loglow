@@ -54,5 +54,8 @@
     "sinon": "^9.0.0",
     "sinon-chai": "^3.5.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "ansi-colors": "^4.1.1",
+    "strftime": "^0.10.0"
+  }
 }
