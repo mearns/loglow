@@ -2,16 +2,17 @@
 /* eslint no-unused-expressions:0 */
 
 // Module under test
+const config = require("../../../src/lib/config");
 const {
     resetConfig,
     setConfigurator,
     setRootConfigurator,
-    getImplementation,
-    lock
-} = require("../../../src/lib/config");
+    lock,
+    getImplementation
+} = config;
 
 // Support
-const { expect } = require("chai");
+const { expect, assert } = require("chai");
 const { propertySetter } = require("../../../src/lib/config-util");
 
 describe("config module", () => {
@@ -101,6 +102,24 @@ describe("config module", () => {
         });
     });
 
+    it("should handle errors thrown by configurators", () => {
+        setConfigurator("a/b/c", () => {
+            const error = new Error("test configurator error");
+            error.name = "TestError";
+            error.foo = "bar";
+            throw error;
+        });
+        expect(() => getImplementation("a/b/c/d")).to.throw;
+        try {
+            getImplementation("a/b/c/d");
+            assert.fail("getImplementation() should have thrown an Error");
+        } catch (error) {
+            expect(error.message).to.deep.equal("test configurator error");
+            expect(error).to.have.haveOwnProperty("name", "TestError");
+            expect(error).to.have.haveOwnProperty("foo", "bar");
+        }
+    });
+
     describe("locking", () => {
         let key;
 
@@ -113,8 +132,31 @@ describe("config module", () => {
             key.unlock();
         });
 
-        it("should not allow config changes when locked", () => {
-            setConfigurator("a/b/c", propertySetter("c", false));
+        function whenLockedIt(should, testFunc) {
+            it(`${should} when locked`, () => {
+                const api = {
+                    resetConfig,
+                    setConfigurator,
+                    setRootConfigurator,
+                    lock,
+                    unlock: () => {}
+                };
+                return testFunc(api);
+            });
+            it(`${should} with a dummy lock`, () => {
+                const notKey = lock();
+                return testFunc(notKey);
+            });
+            it(`${should} with an old lock`, () => {
+                const oldKey = key;
+                oldKey.unlock();
+                key = lock();
+                return testFunc(oldKey);
+            });
+        }
+
+        whenLockedIt("should not allow config changes", api => {
+            api.setConfigurator("a/b/c", propertySetter("c", false));
             const { config } = getImplementation("a/b/c");
             expect(config).to.include({
                 c: true,
@@ -122,29 +164,21 @@ describe("config module", () => {
             });
         });
 
-        it("should not allow the root configurator to be changed when locked", () => {
-            setRootConfigurator(propertySetter("root", true));
-            const { config } = getImplementation("a/b/c");
-            expect(config).to.include({
-                c: true,
-                enabled: true
-            });
-            expect(config).to.not.haveOwnProperty("root");
-        });
+        whenLockedIt(
+            "should not allow the root configurator to be changed",
+            api => {
+                api.setRootConfigurator(propertySetter("root", true));
+                const { config } = getImplementation("a/b/c");
+                expect(config).to.include({
+                    c: true,
+                    enabled: true
+                });
+                expect(config).to.not.haveOwnProperty("root");
+            }
+        );
 
-        it("should not allow a new lock to change configuration when already locked", () => {
-            const notKey = lock();
-            notKey.setConfigurator("a/b/c", propertySetter("c", false));
-            const { config } = getImplementation("a/b/c");
-            expect(config).to.include({
-                c: true,
-                enabled: true
-            });
-        });
-
-        it("should not allow a new lock to reset configuration when already locked", () => {
-            const notKey = lock();
-            notKey.resetConfig();
+        whenLockedIt("should not allow configuration to be reset", api => {
+            api.resetConfig();
             const { config } = getImplementation("a/b/c");
             expect(config).to.include({
                 c: true,
@@ -152,55 +186,8 @@ describe("config module", () => {
             });
         });
 
-        it("should not allow a new lock to unlock configuration when already locked", () => {
-            const notKey = lock();
-            notKey.unlock();
-            setConfigurator("a/b/c", propertySetter("c", false));
-            const { config } = getImplementation("a/b/c");
-            expect(config).to.include({
-                c: true,
-                enabled: true
-            });
-        });
-
-        it("should allow config changes using the lock", () => {
-            key.setConfigurator("a/b/c", propertySetter("c", false));
-            const { config } = getImplementation("a/b/c");
-            expect(config).to.include({
-                c: false,
-                enabled: true
-            });
-        });
-
-        it("should not allow an old key to change configuration when locked", () => {
-            const oldKey = key;
-            oldKey.unlock();
-            key = lock();
-            oldKey.setConfigurator("a/b/c", propertySetter("c", false));
-            const { config } = getImplementation("a/b/c");
-            expect(config).to.include({
-                c: true,
-                enabled: true
-            });
-        });
-
-        it("should not allow an old key to reset configuration when locked", () => {
-            const oldKey = key;
-            oldKey.unlock();
-            key = lock();
-            oldKey.resetConfig();
-            const { config } = getImplementation("a/b/c");
-            expect(config).to.include({
-                c: true,
-                enabled: true
-            });
-        });
-
-        it("should not allow an old key to unlock configuration when locked", () => {
-            const oldKey = key;
-            oldKey.unlock();
-            key = lock();
-            oldKey.unlock();
+        whenLockedIt("should not allow configuration to be unlocked", api => {
+            api.unlock();
             setConfigurator("a/b/c", propertySetter("c", false));
             const { config } = getImplementation("a/b/c");
             expect(config).to.include({
