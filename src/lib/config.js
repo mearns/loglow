@@ -1,11 +1,21 @@
+const { buildMeta } = require("./metadata");
+const EventEmitter = require("events");
+
 let currentLock = null;
+let emitter = new EventEmitter();
+
+const RESET = Symbol("reset");
+const LOG = Symbol("log");
 
 module.exports = {
     resetConfig,
     getImplementation,
+    on,
     setConfigurator,
     setRootConfigurator,
-    lock
+    lock,
+    RESET,
+    LOG
 };
 
 function resetConfig() {
@@ -19,6 +29,10 @@ function resetConfig() {
 function getConfig(loggerName) {
     const partialPaths = getConfigPaths(loggerName);
     return loadMultipleConfigs(partialPaths);
+}
+
+function on(eventName, handler) {
+    onWithLock(eventName, handler, null);
 }
 
 /**
@@ -70,6 +84,7 @@ function lock(name = "loglow-lock") {
         return {
             unlock: () => {},
             setConfigurator: () => {},
+            on: () => {},
             setRootConfigurator: () => {},
             resetConfig: () => {},
             acquired: false
@@ -90,12 +105,14 @@ function lock(name = "loglow-lock") {
             key
         );
     };
+    const localOn = (event, handler) => onWithLock(eventName, handler, key);
     return {
         unlock: () => {
             if (currentLock === key) {
                 currentLock = null;
             }
         },
+        on: localOn,
         setConfigurator: localSetConfigurator,
         setRootConfigurator: localSetRootConfigurator,
         resetConfig: () => {
@@ -192,7 +209,16 @@ function getImplementation(loggerName) {
     if (implementation) {
         return implementation;
     } else {
-        const newImplementation = { config: getConfig(loggerName) };
+        const config = getConfig(loggerName);
+        const enabled = Boolean(config.enabled);
+        const newImplementation = enabled
+            ? // XXX: Here, add middleware support to config, to transform the log entry object before building meta data.
+              (message, metas) => {
+                  const date = new Date();
+                  const metadata = buildMeta(metas);
+                  emitter.emit(LOG, { loggerName, date, message, metadata });
+              }
+            : () => {};
         const targetTree = ensureImplementationTreeExists(loggerName);
         targetTree.present = true;
         implementationMap.set(loggerName, newImplementation);
@@ -229,11 +255,19 @@ function ensureImplementationTreeExists(loggerName) {
  */
 function resetConfigWithLock(lock) {
     if (currentLock === null || lock === currentLock) {
+        emitter.emit(RESET);
+        emitter = new EventEmitter();
         configurators.clear();
         configurators.set(ROOT, config => config);
         implementationMap.clear();
         knownImplementations.present = false;
         knownImplementations.children.clear();
+    }
+}
+
+function onWithLock(eventName, handler, lock) {
+    if (lock === currentLock || currentLock === null) {
+        emitter.on(event, listener);
     }
 }
 
@@ -248,7 +282,7 @@ function resetConfigWithLock(lock) {
  * @param {Symbol?} lock The lock you have for configuring, or `null` if you don't have one.
  */
 function setConfiguratorWithLock(loggerName, configurator, lock) {
-    if (currentLock === null || lock === currentLock) {
+    if (lock === currentLock || currentLock === null) {
         configurators.set(loggerName, configurator);
         clearImplementations(loggerName);
     }

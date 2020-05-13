@@ -1,10 +1,8 @@
 function makeMapUseful(map) {
     const output = {
-        "@kind": "Map"
+        "@kind": "Map",
+        entries: [...map.entries()]
     };
-    for (const [k, v] of map) {
-        output[k] = v;
-    }
     return output;
 }
 
@@ -76,6 +74,10 @@ function defaultMetaTransformer(value) {
     return value;
 }
 
+function hasOwnProperty(obj, prop) {
+    return Object.hasOwnProperty.call(obj, prop);
+}
+
 /**
  * Given a raw metadata value (i.e., not just an object of properties),
  * returns the base name of the field that it will be put in. E.g.,
@@ -85,7 +87,9 @@ function defaultMetaTransformer(value) {
  * @returns {string|null}
  */
 function findMetaFieldType(value) {
-    if (value instanceof Error) {
+    if (hasOwnProperty(value, "@kind")) {
+        return value[kind];
+    } else if (value instanceof Error) {
         return "error";
     } else if (value instanceof Date) {
         return "date";
@@ -96,6 +100,25 @@ function findMetaFieldType(value) {
     }
     return null;
 }
+
+function reduceMetas(acc, meta) {
+    const type = findMetaFieldType(meta);
+    if (type) {
+        if (!hasOwnProperty(acc, type)) {
+            acc[type] = meta;
+            return acc;
+        }
+        for (let i = 2; true; i++) {
+            const propName = `${type}${i}`;
+            if (!hasOwnProperty(acc, propName)) {
+                acc[propName] = meta;
+                return acc;
+            }
+        }
+    }
+    return Object.assign(acc, meta);
+}
+
 /**
  * Given a list of metadata values passed to a logging function, and a list of metadata middleware
  * transformers, transform each metadata value and merge them over each other, with the last value
@@ -104,16 +127,13 @@ function findMetaFieldType(value) {
  * @param {Array<(any, object) => object>} metaMiddlewares Array of middlewares that are applied
  * to _each_ meta object to transform it.
  */
-function buildMeta(metas, config) {
+function buildMeta(metas) {
     let combined = {};
     try {
         for (const meta of metas) {
-            let xformedMeta = meta;
-            for (const xformer of config.metaTransformers) {
-                xformedMeta = xformer(xformedMeta);
-            }
+            const xformedMeta = defaultMetaTransformer(meta);
+            combined = reduceMetas(combined, xformedMeta);
         }
-        combined = config.metaReducer(combined, xformedMeta);
     } catch (error) {
         combined.error_loggingMetaMiddleware = error;
         combined.error_loggingMetaMiddleware_originalMetas = metas;
@@ -122,6 +142,5 @@ function buildMeta(metas, config) {
 }
 
 module.exports = {
-    buildMeta,
-    defaultMetaTransformer
+    buildMeta
 };
