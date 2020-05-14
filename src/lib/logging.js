@@ -1,12 +1,7 @@
-const { getImplementation } = require("./config");
-
-function logFunction(loggerName, message, metas) {
-    const implementation = getImplementation(loggerName);
-    implementation(message, metas);
-}
+const { log: logImpl } = require("./config");
 
 function getLogger(loggerName) {
-    const log = (message, ...metas) => logFunction(loggerName, message, metas);
+    const log = (message, ...metas) => logImpl({ loggerName, message, metas });
     return log;
 }
 

@@ -3,6 +3,7 @@ module.exports = {
     propertyAppender,
     propertyDefaulter,
     propertyDeleter,
+    addDecorator,
     compose
 };
 
@@ -13,6 +14,12 @@ function compose(...configurators) {
         }
         return cfg;
     };
+}
+
+function addDecorator(...decoratorMetas) {
+    return propertyAppender("middleware", ({ metas }) => {
+        metas.push(...decoratorMetas);
+    });
 }
 
 function propertyDeleter(propName) {

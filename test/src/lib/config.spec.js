@@ -4,58 +4,111 @@
 // Module under test
 const config = require("../../../src/lib/config");
 const {
+    on,
+    log,
     resetConfig,
     setConfigurator,
     setRootConfigurator,
     lock,
-    getImplementation
+    getImplementation,
+    LOG
 } = config;
 
 // Support
-const { expect, assert } = require("chai");
-const { propertySetter } = require("../../../src/lib/config-util");
+const chai = require("chai");
+const { expect, assert } = chai;
+const {
+    compose,
+    propertySetter,
+    addDecorator
+} = require("../../../src/lib/config-util");
+const sinon = require("sinon");
+const sinonChai = require("sinon-chai");
+
+chai.use(sinonChai);
 
 describe("config module", () => {
+    let logSpy;
+
+    beforeEach(() => {
+        logSpy = sinon.spy();
+        on(LOG, logSpy);
+    });
+
     afterEach(() => {
         resetConfig();
     });
 
-    it("should give the default configuration when nothing is configured", () => {
-        const { config } = getImplementation("any/logger/at/all");
-        expect(config).to.deep.equal({});
+    it("should be disabled when nothing is configured", () => {
+        log({ loggerName: "any/logger/at/all", message: "any message" });
+        expect(logSpy).not.to.have.been.called;
     });
 
     it("should apply all configurators above the logger", () => {
-        setConfigurator("a", propertySetter("a", true));
-        setConfigurator("a/b", propertySetter("b", true));
-        setConfigurator("a/b/c/d/e", propertySetter("e", true));
+        setConfigurator("a", addDecorator({ a: true }));
+        setConfigurator("a/b", addDecorator({ b: true }));
+        setConfigurator("a/b/c/d/e", addDecorator({ e: true }));
 
-        const { config } = getImplementation("a/b/c/d/e/f/g/h");
-
-        expect(config).to.include({
-            a: true,
-            b: true,
-            e: true,
-            enabled: true
+        log({
+            loggerName: "a/b/c/d/e/f/g/h",
+            message: "what-ever",
+            metas: [{ orig: true }]
         });
+
+        expect(logSpy).to.have.been.calledOnce;
+        expect(logSpy).to.have.been.calledWithExactly(
+            sinon.match({
+                loggerName: "a/b/c/d/e/f/g/h",
+                message: "what-ever",
+                metadata: {
+                    a: true,
+                    b: true,
+                    e: true,
+                    orig: true
+                }
+            })
+        );
     });
 
     it("should apply the root configurator to all implementations", () => {
-        setRootConfigurator(propertySetter("is-root", "yeh"));
-        const { config } = getImplementation("a/b/c");
-        expect(config).to.include({
-            "is-root": "yeh"
+        setRootConfigurator(
+            compose(
+                addDecorator({ "is-root": "yeh" }),
+                propertySetter("enabled", true)
+            )
+        );
+        log({
+            loggerName: "a/b/c",
+            message: "what-ever",
+            metas: [{ orig: true }]
         });
+        expect(logSpy).to.have.been.calledOnce;
+        expect(logSpy).to.have.been.calledWithExactly(
+            sinon.match({
+                loggerName: "a/b/c",
+                message: "what-ever",
+                metadata: {
+                    orig: true,
+                    "is-root": "yeh"
+                }
+            })
+        );
     });
 
     it("should be fine if the root configurator is null", () => {
         setRootConfigurator(null);
-        setConfigurator("a/b", propertySetter("b", true));
-        const { config } = getImplementation("a/b/c");
-        expect(config).to.include({
-            b: true,
-            enabled: true
-        });
+        setConfigurator("a/b", addDecorator({ b: true }));
+        log({ loggerName: "a/b/c", metas: [{ orig: true }] });
+        expect(logSpy).to.have.been.calledOnce;
+        expect(logSpy).to.have.been.calledWithExactly(
+            sinon.match({
+                loggerName: "a/b/c",
+                metadata: {
+                    orig: true,
+                    b: true
+                }
+            })
+        );
     });
 
     it("should not set enabled if only the root configurator applies", () => {

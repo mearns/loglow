@@ -40,12 +40,12 @@ function makeErrorUseful(error) {
 }
 
 function makeUseful(value) {
-    if (meta instanceof Error) {
-        return makeErrorUseful(meta);
-    } else if (meta instanceof Map) {
-        return makeMapUseful(meta);
-    } else if (meta instanceof Set) {
-        return makeSetUseful(meta);
+    if (value instanceof Error) {
+        return makeErrorUseful(value);
+    } else if (value instanceof Map) {
+        return makeMapUseful(value);
+    } else if (value instanceof Set) {
+        return makeSetUseful(value);
     } else {
         return value;
     }
@@ -60,14 +60,14 @@ function makeUseful(value) {
  */
 function defaultMetaTransformer(value) {
     if (Array.isArray(value)) {
-        return value.map(defaultMetaReducerTransform);
+        return value.map(defaultMetaTransformer);
     } else if (typeof value === "symbol") {
         return makeSymbolUseful(value);
     } else if (typeof value === "object") {
         const obj = makeUseful(value);
         const output = Object.create(obj);
         for (const propName in obj) {
-            output[propName] = defaultMetaReducerTransform(obj[propName]);
+            output[propName] = defaultMetaTransformer(obj[propName]);
         }
         return output;
     }

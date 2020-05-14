@@ -8,8 +8,8 @@ const RESET = Symbol("reset");
 const LOG = Symbol("log");
 
 module.exports = {
+    log,
     resetConfig,
-    getImplementation,
     on,
     setConfigurator,
     setRootConfigurator,
@@ -209,21 +209,51 @@ function getImplementation(loggerName) {
     if (implementation) {
         return implementation;
     } else {
-        const config = getConfig(loggerName);
-        const enabled = Boolean(config.enabled);
-        const newImplementation = enabled
-            ? // XXX: Here, add middleware support to config, to transform the log entry object before building meta data.
-              (message, metas) => {
-                  const date = new Date();
-                  const metadata = buildMeta(metas);
-                  emitter.emit(LOG, { loggerName, date, message, metadata });
-              }
-            : () => {};
+        const newImplementation = buildImplementation(loggerName);
         const targetTree = ensureImplementationTreeExists(loggerName);
         targetTree.present = true;
         implementationMap.set(loggerName, newImplementation);
         return newImplementation;
     }
+}
+
+function buildImplementation(loggerName) {
+    const config = getConfig(loggerName);
+    const enabled = Boolean(config.enabled);
+    if (!enabled) {
+        return () => {};
+    }
+    const middleware = (Array.isArray(config.middleware)
+        ? config.middleware
+        : config.middleware
+        ? [config.middleware]
+        : []
+    ).reverse();
+    if (middleware.some(mw => typeof mw !== "function")) {
+        throw new Error(
+            `Middleware for logger '${loggerName}' is not a function`
+        );
+    }
+    return (message, metas) => {
+        const date = new Date();
+        const entry = { date, message, metas };
+        for (const xform of middleware) {
+            Object.assign(entry, xform(entry));
+            if (entry == null) {
+                return;
+            }
+        }
+        const metadata = buildMeta(entry.metas);
+        emitter.emit(LOG, {
+            loggerName,
+            date: entry.date,
+            message: entry.message,
+            metadata
+        });
+    };
+}
+function log({ loggerName, message, metas }) {
+    getImplementation(loggerName)(message, metas);
 }
 
 /**
@@ -267,7 +297,7 @@ function resetConfigWithLock(lock) {
 
 function onWithLock(eventName, handler, lock) {
     if (lock === currentLock || currentLock === null) {
-        emitter.on(event, listener);
+        emitter.on(eventName, handler);
     }
 }
 
@@ -334,7 +364,7 @@ function loadMultipleConfigs(configPaths) {
  */
 function getConfigPaths(loggerName) {
     const [firstComponent, ...components] = splitLoggerName(loggerName);
-    const paths = new Array(components.length + 1);
+    const paths = new Array(components.length);
     paths[0] = firstComponent;
     let parent = firstComponent;
     for (let i = 0; i < components.length; i++) {
