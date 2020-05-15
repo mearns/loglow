@@ -112,47 +112,39 @@ describe("config module", () => {
     });
 
     it("should not set enabled if only the root configurator applies", () => {
-        setRootConfigurator(propertySetter("is-root", "yeh"));
-        const { config } = getImplementation("a/b/c");
-        expect(config).to.include({
-            "is-root": "yeh"
-        });
-        expect(config).to.not.haveOwnProperty("enabled");
+        setRootConfigurator(addDecorator({ "is-root": true }));
+        log({ loggerName: "a/b/c", metas: [{ orig: true }] });
+        expect(logSpy).to.not.have.been.called;
     });
 
-    it("should get the same implementation twice", () => {
-        setConfigurator("a", propertySetter("a", true));
+    it("should apply the new configuration when configurators change", () => {
+        setConfigurator("a/b/c/d", addDecorator({ d: true }));
+        log({ loggerName: "a/b/c/d/e", metas: [{ orig: true }] });
 
-        const firstImp = getImplementation("a/b/c/d/e/f/g/h");
-        const secondImp = getImplementation("a/b/c/d/e/f/g/h");
+        setConfigurator("a/b", addDecorator({ b: true }));
+        setConfigurator("a/b/c/d", addDecorator({ d: 2 }));
+        log({ loggerName: "a/b/c/d/e", metas: [{ orig: 2 }] });
 
-        expect(firstImp).to.deep.equal(secondImp);
-    });
-
-    it("should give a new configuration when configurators change", () => {
-        setConfigurator("a/b/c/d", propertySetter("d", true));
-        const firstConfig = getImplementation("a/b/c/d/e/f");
-
-        setConfigurator("a/b", propertySetter("b", true));
-        const secondConfig = getImplementation("a/b/c/d/e/f");
-
-        setConfigurator("a/b/c/d", propertySetter("d", 2));
-        const thirdConfig = getImplementation("a/b/c/d/e/f");
-
-        expect(firstConfig.config).to.include({
-            d: true,
-            enabled: true
-        });
-        expect(secondConfig.config).to.include({
-            d: true,
-            b: true,
-            enabled: true
-        });
-        expect(thirdConfig.config).to.include({
-            d: 2,
-            b: true,
-            enabled: true
-        });
+        expect(logSpy).to.have.been.calledTwice;
+        expect(logSpy).to.have.been.calledWithExactly(
+            sinon.match({
+                loggerName: "a/b/c/d/e",
+                metadata: {
+                    orig: true,
+                    d: true
+                }
+            })
+        );
+        expect(logSpy).to.have.been.calledWithExactly(
+            sinon.match({
+                loggerName: "a/b/c/d/e",
+                metadata: {
+                    orig: 2,
+                    b: true,
+                    d: 2
+                }
+            })
+        );
     });
 
     it("should handle errors thrown by configurators", () => {
@@ -162,10 +154,20 @@ describe("config module", () => {
             error.foo = "bar";
             throw error;
         });
-        expect(() => getImplementation("a/b/c/d")).to.throw;
+        expect(() =>
+            log({
+                loggerName: "a/b/c/d",
+                message: "test-message",
+                metas: [{ orig: true }]
+            })
+        ).to.throw;
         try {
-            getImplementation("a/b/c/d");
-            assert.fail("getImplementation() should have thrown an Error");
+            log({
+                loggerName: "a/b/c/d",
+                message: "test-message",
+                metas: [{ orig: true }]
+            });
+            assert.fail("log() should have thrown an Error");
         } catch (error) {
             expect(error.message).to.deep.equal("test configurator error");
             expect(error).to.have.haveOwnProperty("name", "TestError");
@@ -177,7 +179,7 @@ describe("config module", () => {
         let key;
 
         beforeEach(() => {
-            setConfigurator("a/b/c", propertySetter("c", true));
+            setConfigurator("a/b/c", addDecorator({ c: 1 }));
             key = lock();
         });
 
@@ -209,44 +211,83 @@ describe("config module", () => {
         }
 
         whenLockedIt("should not allow config changes", api => {
-            api.setConfigurator("a/b/c", propertySetter("c", false));
-            const { config } = getImplementation("a/b/c");
-            expect(config).to.include({
-                c: true,
-                enabled: true
+            api.setConfigurator("a/b/c", addDecorator({ c: 2 }));
+            log({
+                loggerName: "a/b/c/d",
+                message: "test message",
+                metas: [{ orig: true }]
             });
+            expect(logSpy).to.have.been.calledOnce;
+            expect(logSpy).to.have.been.calledWithExactly(
+                sinon.match({
+                    loggerName: "a/b/c/d",
+                    metadata: {
+                        orig: true,
+                        c: 1
+                    }
+                })
+            );
         });
 
         whenLockedIt(
             "should not allow the root configurator to be changed",
             api => {
-                api.setRootConfigurator(propertySetter("root", true));
-                const { config } = getImplementation("a/b/c");
-                expect(config).to.include({
-                    c: true,
-                    enabled: true
+                api.setRootConfigurator(addDecorator({ root: 2 }));
+                log({
+                    loggerName: "a/b/c/d",
+                    message: "test message",
+                    metas: [{ orig: true }]
                 });
-                expect(config).to.not.haveOwnProperty("root");
+                expect(logSpy).to.have.been.calledOnce;
+                expect(logSpy).to.have.been.calledWithExactly(
+                    sinon.match({
+                        loggerName: "a/b/c/d",
+                        metadata: {
+                            orig: true,
+                            c: 1
+                        }
+                    })
+                );
             }
         );
 
         whenLockedIt("should not allow configuration to be reset", api => {
             api.resetConfig();
-            const { config } = getImplementation("a/b/c");
-            expect(config).to.include({
-                c: true,
-                enabled: true
+            log({
+                loggerName: "a/b/c/d",
+                message: "test message",
+                metas: [{ orig: true }]
             });
+            expect(logSpy).to.have.been.calledOnce;
+            expect(logSpy).to.have.been.calledWithExactly(
+                sinon.match({
+                    loggerName: "a/b/c/d",
+                    metadata: {
+                        orig: true,
+                        c: 1
+                    }
+                })
+            );
         });
 
         whenLockedIt("should not allow configuration to be unlocked", api => {
             api.unlock();
-            setConfigurator("a/b/c", propertySetter("c", false));
-            const { config } = getImplementation("a/b/c");
-            expect(config).to.include({
-                c: true,
-                enabled: true
+            setConfigurator("a/b/c", addDecorator({ c: 2 }));
+            log({
+                loggerName: "a/b/c/d",
+                message: "test message",
+                metas: [{ orig: true }]
             });
+            expect(logSpy).to.have.been.calledOnce;
+            expect(logSpy).to.have.been.calledWithExactly(
+                sinon.match({
+                    loggerName: "a/b/c/d",
+                    metadata: {
+                        orig: true,
+                        c: 1
+                    }
+                })
+            );
         });
     });
 });
