@@ -27,9 +27,24 @@ getting a logger is cheap.
 Libraries should typically get the loggers they want by name, but not do any configuration. An application will set the configuration
 at startup for whatever loggers they care to configure. This is typically done at load time for the top-level entrypoint of the
 application, before any other modules are loaded so that the configuration is in place before any loggers are used. For good measure,
-the application can get an exclusive configuration lock which will prevent any other code from configuring logging.
+the application can get an exclusive configuration lock which will prevent any other code from configuring logging. Something like
+https://nodejs.org/api/async_hooks.html#async_hooks_class_asynclocalstorage should help where available.
 
 ## Configuration Concepts
+
+There are three ways to configure loggers:
+
+-   Enabled or disabled
+-   Middleware
+-   Decorators
+
+In additional, you configuring _logging_ by adding subscribers.
+
+The master can lock down everything except decorators. Decorators are useful within a module to create a coherent story without
+having to pass a lot of things around. Note that it doesn't directly solve the issue of interleaved executions where perhaps the
+same function is being invoked as part of several different concurrent stories and logging things: they will still need a way to
+know what story they're part of. However, naming loggers with a unique story-id means they you only need to pass that story-id
+through to everything (there's a reasonable chance they would need that anyway), and they can then ask for the correct logger.
 
 ### Logger Middleware
 
@@ -41,25 +56,5 @@ in. Or, it can filter out the log entry by invoking the provided `terminate` hoo
 Common use cases include:
 
 -   Filters that exclude log entries from being added to the log based on their contents.
--   Decorators that add fixed metadata to every log entry.
 -   Log rewriters to catch logs you don't have control over (e.g., from a third-party library) and transforming them into
     something more useful to you.
-
-### Metadata Transformers
-
-It is often convenient to allow raw values, as opposed to dictionary objects, to be passed as metadata arguments. For instance,
-it is common to pass an Error object as metadata from within an error handler. It would be needlessly verbose to require the
-calling code to wrap this in something like `{ error }` just to get it logged. However, certain objects do not log well natively.
-Errors are a notable example; when you JSON-ify an Error object by default, you end up with an empty object literal: `{}`. This
-is because the default implementation doesn't include the three most useful properties of an Error: the name, message, or stack.
-A metadata transformer can look for Error objects passed in the meta arguments and transform it into something more useful.
-Similarly, Set and Map objects do not natively JSON-ify in very useful ways.
-
-A log configuration can have any number of metadata transformers configured for it. For each metadata value applied, they are invoked
-sequentially to transform the value into something useful.
-
-### Metadata Reducer
-
-The log function can be invoked with an arbitrary number of metadata values; in order to generate a log entry, these need to
-be collapsed into a single metadata value. This is the job of the metadata reducer. A config can only have a single reducer do to the
-nature of it's job.
