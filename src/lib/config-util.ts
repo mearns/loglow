@@ -1,13 +1,4 @@
-module.exports = {
-    propertySetter,
-    propertyAppender,
-    propertyDefaulter,
-    propertyDeleter,
-    addDecorator,
-    compose
-};
-
-function compose(...configurators) {
+export function compose(...configurators) {
     return cfg => {
         for (const configurator of configurators) {
             cfg = configurator(cfg);
@@ -16,20 +7,20 @@ function compose(...configurators) {
     };
 }
 
-function addDecorator(...decoratorMetas) {
+export function addDecorator(...decoratorMetas) {
     return propertyAppender("middleware", ({ metas }) => {
         metas.push(...decoratorMetas);
     });
 }
 
-function propertyDeleter(propName) {
+export function propertyDeleter(propName) {
     return cfg => {
         delete cfg[propName];
         return cfg;
     };
 }
 
-function propertyDefaulter(propName, defaultValue) {
+export function propertyDefaulter(propName, defaultValue) {
     return cfg => {
         if (!Object.hasOwnProperty.call(cfg, propName)) {
             cfg[propName] = defaultValue;
@@ -38,14 +29,14 @@ function propertyDefaulter(propName, defaultValue) {
     };
 }
 
-function propertySetter(propName, value) {
+export function propertySetter(propName, value) {
     return cfg => {
         cfg[propName] = value;
         return cfg;
     };
 }
 
-function propertyAppender(propName, ...values) {
+export function propertyAppender(propName, ...values) {
     return cfg => {
         cfg[propName] = cfg[propName] || [];
         cfg[propName].push(...values);

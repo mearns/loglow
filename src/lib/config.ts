@@ -1,5 +1,5 @@
-const { buildMeta } = require("./metadata");
-const EventEmitter = require("events");
+import { buildMeta } from "./metadata";
+import EventEmitter from "events";
 
 let currentLock = null;
 let emitter = new EventEmitter();
