@@ -18,7 +18,7 @@ The resulting configuration object is called an _implementation_. It's created w
 a configurator that applies to the implementation is changed.
 
 A logger itself, the thing that is used for adding log entries, is mostly just a façade around some functions that load
-the required implementation and use it to generate the entry. Loggers are stateless; you can get one by name when you need it,
+the required _implementation_ and use it to generate the log-entry. Loggers are stateless; you can get one by name when you need it,
 reuse or throw it away and get it back when you want it again. Because of the separation of loggers and implementations,
 getting a logger is cheap.
 
@@ -38,7 +38,7 @@ a logger is disabled, all calls to it are simply no-ops.
 
 ### Decorators
 
-A **decorator** is function that returns a set of metadata that gets added to all initial log entries for a logger.
+A **decorator** is function that returns a set of metadata that gets added to all log entries for a logger.
 
 ### Middleware
 
@@ -56,7 +56,7 @@ The **receiver** is the ultimate destination for every log entry, at least as fa
 do things like write the entry to console or file system, ship it to a log aggregation system, etc.
 
 Every enabled logger has to have exactly one receiver configured. If you have multiple destinations you want a log entry to go to, you
-can use one receiver function that delegates to multiple other functions.
+can use one receiver function that delegates to multiple other functions, but it is up to you to implement this.
 
 Receivers are the only part of the logging pipeline that can be asynchronous. If the receiver returns a promise, subsequent calls to the
 receiver are queued up behind that promise to ensure that logs can be handled in order.
@@ -98,7 +98,7 @@ Upon creation, the initial log entry has its `metadata` property set to the _arr
 Note that if the logger is not enabled, the log entry is not created and the call to logger returns (almost) immediately without doing anything.
 
 After the initial log entry is created, any decorators configured for the logger are invoked
-and their returns values are appended to the end of the `metadata` array. Note that decorators must
+and their return values are appended to the end of the `metadata` array. Note that decorators must
 return synchronously.
 
 The next step is to apply any configured middleware for the logger. A middleware is simply a function with the following signature:
@@ -113,7 +113,7 @@ if any. The middleware is responsible for passing the desired log entry to this 
 to get it processed. If the middleware doesn't invoke the given `next` function with a log entry,
 _the log entry will be dropped_. This is how middleware can be used to filter out log entries based
 on their contents (if you want to drop everything for a logger, it's usually preferable to just
-diable it). Alternatively, the middleware can invoke `next` multiple times to generate multiple log
+disable it). Alternatively, the middleware can invoke `next` multiple times to generate multiple log
 entries from one. The most common use case for middleware is to transform the log entry before passing it on.
 
 Note that the `next` function is only valid until the middleware function returns. If you call it
@@ -122,7 +122,7 @@ asynchronous transformations which could cause logs to be processed out of order
 
 Also note that it is not specified whether `next` will actually cause the next middleware to be
 invoked as part of the same callstack or if it will queue up the call(s) to be made after the
-current middlewar returns. Middleware should not depend on either of these possibilities (e.g.,
+current middleware returns. Middleware should not depend on either of these possibilities (e.g.,
 do not assume your middleware can catch errors thrown by subsequent middleware).
 
 The final middleware function is invoked with a `next` argument which encapsulates passing the log
