@@ -58,11 +58,15 @@ do things like write the entry to console or file system, ship it to a log aggre
 Every enabled logger has to have exactly one receiver configured. If you have multiple destinations you want a log entry to go to, you
 can use one receiver function that delegates to multiple other functions, but it is up to you to implement this.
 
-Receivers are the only part of the logging pipeline that can be asynchronous. If the receiver returns a promise, subsequent calls to the
-receiver are queued up behind that promise to ensure that logs can be handled in order.
+If your receiver is asynchronous, as will often be the case, serialization must be handled external to the logging. In other words, the logging
+function will not wait for your receiver to finish asynchronous work: as soon as the receiver function returns, the logger can proceed
+with the next log entry.
 
-If your receiver can handle some amount of parallelization, this can be done by having a stateful receiver that keeps track of all pending work, but it is up
-to your app to ensure the receiver has finished everything before exiting.
+To handle serialization of asynchronous receivers, make your receiver stateful, tracking a reassignable promise. On each call, create a new
+promise chained from the previous, settling when the receiver is completed, and set the tracked promise to the new promise. You'll also want to
+make sure you don't quit your application before this promise is settled.
+
+TODO: We should provide a helper function to do this for any given receiver function.
 
 ## Log Entries, Decorators, Receivers, and Middleware
 
@@ -104,7 +108,7 @@ return synchronously.
 The next step is to apply any configured middleware for the logger. A middleware is simply a function with the following signature:
 
 ```typescript
-type middleware(loggerName: string, logEntry: LogEntry, next: (logEntry: LogEntry) => void): void;
+type middleware(loggerName: string, logEntry: LogEntry, next: (loggerName: string, logEntry: LogEntry) => void): void;
 ```
 
 The first middleware function is invoked with the name of the logger and the initial log entry after decorators are applied.
@@ -129,6 +133,24 @@ The final middleware function is invoked with a `next` argument which encapsulat
 entry to the configured `receiver`. This is entirely transparent to the middleware, it doesn't know (nor should it care)
 if the it is the last middleware function or not, whether `next` is going to be for another middleware
 function, or for the receiver.
+
+Middleware has the potential for changing the loggerName, but not changing the logger itself and doing so is
+**not recommended**. In other words, you can pass a different loggerName to `next` than what your middleware was
+invoked with, but this does not change the logger implementation: it will get processed by the remaining middleware,
+and end up at the same receiver. Again, this is not usually recommended as it can make it difficult to understand
+where a log entry came from.
+
+If that's _not_ what you want, you can simply get the logger you want to use and invoke it as you normally would.
+
+## Errors
+
+Errors in middleware will be caught and cause the log entry to be aborted, replaced by a log entry for a special
+logger named "@loglow/external/errors". Note that this entry is still passed to the original logger for the entry
+so that it will show up where expected, but as a different logger name. This is the same anytime a middleware
+changes the logger name (although it's not usually recommended to do so).
+
+Errors in receivers will not be caught, they will be thrown from within the logger invocation. If that's not what you want,
+you'll need to handle the errors inside of it.
 
 ## Usage Patterns
 
