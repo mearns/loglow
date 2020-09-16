@@ -1,4 +1,3 @@
-import { buildMeta } from "./metadata";
 import { Key, isKey, lock as getKey, unlock } from "./locking";
 
 const LOGGER_NAME = "@loglow";
@@ -15,11 +14,12 @@ interface PreliminaryLogEntry {
     metas: Array<unknown>;
 }
 
-interface LogEntry {
-    loggerName: string;
-    date: Date;
-    message: string;
-    meta: unknown;
+export interface LogEntry {
+    readonly loggerName: string;
+    readonly date: Date;
+    readonly message: string;
+    readonly metas: Array<unknown>;
+    readonly [prop: string]: unknown;
 }
 
 const NOOP = () => {
@@ -32,6 +32,7 @@ type MiddlewareNext = (
     loggerName: string,
     logEntry: PreliminaryLogEntry
 ) => void;
+
 type Middleware = (
     loggerName: string,
     logEntry: PreliminaryLogEntry,
@@ -43,9 +44,13 @@ type Receiver = (entry: LogEntry) => void;
 interface Configuration {
     enabled: boolean;
     middleware: Array<Middleware>;
+    decorations: Array<unknown>;
     receiver: Receiver;
 }
 type Configurator = (previousConfig: Configuration) => Configuration;
+
+const Wrapped = Symbol("isWrapped");
+type WrappedConfigurator = Configurator & { readonly [Wrapped]: true };
 
 export interface Lock {
     unlock: () => void;
@@ -74,7 +79,7 @@ export interface Lock {
  * @param [name] optionally specify a name for the lock.
  * It's useful for debugging.
  */
-function lock(name = "loglow-lock"): Lock {
+export function lock(name = "loglow-lock"): Lock {
     const key = getKey(name);
     if (key === null) {
         return {
@@ -98,16 +103,20 @@ const ROOT = Symbol("root");
 
 const defaultConfig: Configuration = {
     enabled: false,
+    decorations: [],
     middleware: [],
     receiver: NOOP
 };
-const DEFAULT_ROOT_CONFIGURATOR: Configurator = config => config;
+const DEFAULT_ROOT_CONFIGURATOR: WrappedConfigurator = Object.assign(
+    (config => config) as Configurator,
+    { [Wrapped]: true } as { readonly [Wrapped]: true }
+);
 
 /**
  * The map of configurators to logger names.
  * @name configurators
  */
-const configurators = new Map<string | symbol, Configurator>();
+const configurators = new Map<string | symbol, WrappedConfigurator>();
 configurators.set(ROOT, DEFAULT_ROOT_CONFIGURATOR);
 
 /**
@@ -237,17 +246,14 @@ function buildImplementation(loggerName: string): Implementation {
             {
                 date: new Date(),
                 message,
-                metas
+                metas: [...config.decorations, ...metas]
             },
             config.middleware
         );
         for (const [loggerName, entry] of invocations) {
-            const meta = buildMeta(entry.metas);
             config.receiver({
                 loggerName,
-                date: entry.date,
-                message: entry.message,
-                meta
+                ...entry
             });
         }
     };
@@ -308,7 +314,7 @@ function applyMiddleware(
  * This is _the_ logging interface to add log entries. It will get (or create) an implementation
  * for the specified logger (using {@link getImplementation}) and invoke it to generate the log entry or entries.
  */
-function log({
+export function log({
     loggerName,
     message,
     metas
@@ -357,7 +363,10 @@ function setConfiguratorWithLock(
     configurator: Configurator
 ): void {
     if (isKey(key)) {
-        configurators.set(loggerName, configurator);
+        configurators.set(
+            loggerName,
+            wrapConfigurator(configurator, setConfiguratorWithLock)
+        );
         clearImplementations(loggerName);
     }
 }
@@ -367,12 +376,15 @@ function setRootConfiguratorWithLock(
     configurator: Configurator
 ): void {
     if (isKey(key)) {
-        configurators.set(ROOT, configurator);
+        configurators.set(
+            ROOT,
+            wrapConfigurator(configurator, setRootConfiguratorWithLock)
+        );
         clearAlImplementations();
     }
 }
 
-function hasOwnProperty(object, propName) {
+function hasOwnProperty(object: unknown, propName: string): boolean {
     return Object.hasOwnProperty.call(object, propName);
 }
 
@@ -381,18 +393,18 @@ function hasOwnProperty(object, propName) {
  * with the root. If at least one configurator is actually set for
  * any of the paths, then the `enabled` config defaults to `true`.
  *
- * @param {Array<string>} configPaths A reverse-priority list of config
+ * @param configPaths A reverse-priority list of config
  * paths to load configs for, usually coming from `getConfigPaths`.
  * The config for the last path overrides any that come before it.
  */
-function loadMultipleConfigs(configPaths) {
-    let config = { ...defaultConfig };
-    const rootConfigurator = configurators.get(ROOT);
+function loadMultipleConfigs(configPaths: Array<string>): Configuration {
+    let config: Configuration = { ...defaultConfig };
+    const rootConfigurator: Configurator = configurators.get(ROOT);
     if (rootConfigurator) {
         config = rootConfigurator(config);
     }
     for (const path of configPaths) {
-        const configurator = configurators.get(path);
+        const configurator: Configurator = configurators.get(path);
         if (configurator) {
             if (!hasOwnProperty(config, "enabled")) {
                 config.enabled = true;
@@ -406,16 +418,15 @@ function loadMultipleConfigs(configPaths) {
 /**
  * Find all the prefix paths for the given config paths. E.g.,
  * If you pass in "foo/bar/trot", you'll get back ["foo", "foo/bar", "foo/bar/trot"]
- * @param {string} loggerName The fully qualified path
- * @return {Array<string>}
+ * @param loggerName The fully qualified path
  */
-function getConfigPaths(loggerName) {
+function getConfigPaths(loggerName: string): Array<string> {
     const [firstComponent, ...components] = splitLoggerName(loggerName);
-    const paths = new Array(components.length);
+    const paths: Array<string> = new Array(components.length);
     paths[0] = firstComponent;
-    let parent = firstComponent;
+    let parent: string = firstComponent;
     for (let i = 0; i < components.length; i++) {
-        const newPath = `${parent}/${components[i]}`;
+        const newPath: string = buildLoggerName(parent, components[i]);
         paths[i + 1] = newPath;
         parent = newPath;
     }
@@ -435,9 +446,17 @@ function buildLoggerName(...parts: Array<string>): string {
     return parts.join("/");
 }
 
-function overrideStack(error, stack) {
+/**
+ * Return an error object which uses the given error as a prototype, but inherits all of it's
+ * enumerable properties as own properties, and replaces the stack property with the given value.
+ * Or, failing to do that, returns the original error as is. Doesn't modify the original error,
+ * regardless.
+ * @param error
+ * @param stack
+ */
+function overrideStack(error: Error, stack: unknown): Error {
     try {
-        const descriptors = {};
+        const descriptors: Record<string, PropertyDescriptor> = {};
         for (const propName in error) {
             descriptors[propName] = {
                 get: () => error[propName]
@@ -452,62 +471,48 @@ function overrideStack(error, stack) {
     }
 }
 
-function splitStack(stack) {
+/**
+ * Split a stack string into two parts: the first line (the "header") and the rest.
+ */
+function splitStack(stack: string): [string, string] {
     const [header, ...callStack] = stack.split(/\n/);
     return [header, callStack.join("\n")];
 }
 
-function wrapConfigurator(func, nonUserCodeEntryPoint) {
-    if (!func) {
+/**
+ * Wrap a configurator so that if it throws an error the stack is more useful.
+ * @param configurator
+ * @param nonUserCodeEntryPoint
+ */
+function wrapConfigurator(
+    configurator: Configurator,
+    nonUserCodeEntryPoint: (...unknown) => unknown
+): WrappedConfigurator {
+    if (!configurator) {
         return null;
     }
-    const sourceError = {};
+    const sourceError: { stack?: string } = {};
     if (Error.captureStackTrace) {
         Error.captureStackTrace(sourceError, nonUserCodeEntryPoint);
     }
-    return cfg => {
-        try {
-            return func(cfg);
-        } catch (error) {
-            if (typeof error.stack === "string") {
-                const [header, callStack] = splitStack(error.stack);
-                const [, sourceStack] = splitStack(sourceError.stack || "");
-                throw overrideStack(
-                    error,
-                    `${header}\n${sourceStack}\n  called:\n${callStack}`
-                );
+    const [, sourceStack] = splitStack(sourceError.stack || "");
+    return Object.assign(
+        (cfg: Configuration): Configuration => {
+            try {
+                return configurator(cfg);
+            } catch (error) {
+                if (typeof error.stack === "string") {
+                    const [header, callStack] = splitStack(error.stack);
+                    throw overrideStack(
+                        error,
+                        `${header}\n${sourceStack}\n  called:\n${callStack}`
+                    );
+                }
+                throw error;
             }
-            throw error;
-        }
-    };
-}
-
-const RESET = Symbol("reset");
-const LOG = Symbol("log");
-
-module.exports = {
-    log,
-    resetConfig,
-    on,
-    setConfigurator,
-    setRootConfigurator,
-    lock,
-    RESET,
-    LOG
-};
-
-/**
- * Attempt to reset all configurations back to default: i.e., the ROOT
- * configuration is the default config, and all other configurators
- * are removed.
- *
- * Note that this only works if configuration is not locked:
- * if it's locked, nothing happens.
- *
- * @see resetConfigWithLock
- */
-export function resetConfig(): void {
-    resetConfigWithLock(null);
+        },
+        { [Wrapped]: true } as { readonly [Wrapped]: true }
+    );
 }
 
 /**
@@ -521,7 +526,7 @@ export function resetConfig(): void {
 function resetConfigWithLock(key: Key): void {
     if (isKey(key)) {
         configurators.clear();
-        configurators.set(ROOT, config => config);
+        configurators.set(ROOT, DEFAULT_ROOT_CONFIGURATOR);
         implementationMap.clear();
         knownImplementations.present = false;
         knownImplementations.children.clear();
@@ -534,30 +539,4 @@ function resetConfigWithLock(key: Key): void {
 function getConfig(loggerName: string): Configuration {
     const partialPaths = getConfigPaths(loggerName);
     return loadMultipleConfigs(partialPaths);
-}
-
-function on(eventName, handler) {
-    onWithLock(eventName, handler, null);
-}
-
-/**
- * Top-level API for setting configurator of a logger by name. This also provides
- * a base config for all loggers that have the given name as a prefix.
- * @param {string} loggerName The name of the logger to configure.
- * @param {(config) => config} configurator Configurator for the loggers.
- * @exported
- */
-function setConfigurator(loggerName, configurator) {
-    setConfiguratorWithLock(
-        loggerName,
-        wrapConfigurator(configurator, setConfigurator),
-        null
-    );
-}
-
-function setRootConfigurator(configurator) {
-    setRootConfiguratorWithLock(
-        wrapConfigurator(configurator, setRootConfigurator),
-        null
-    );
 }

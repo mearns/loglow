@@ -2,9 +2,6 @@ export type Key = symbol;
 
 let currentKey: Key = null;
 
-/**
- * @private
- */
 export function isKey(key: Key | null): boolean {
     return key === currentKey || currentKey === null;
 }

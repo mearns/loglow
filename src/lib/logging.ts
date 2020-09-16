@@ -1,3 +1,6 @@
+/**
+ * This is the client portion of the system.
+ */
 import { log as logImpl } from "./config";
 
 export type LogEntryHandler = (
@@ -7,13 +10,8 @@ export type LogEntryHandler = (
     metadata: Record<string, unknown>
 ) => void;
 
-export type LogFunction = (
-    message: string,
-    ...metas: Array<Record<string, unknown>>
-) => void;
+export type LogFunction = (message: string, ...metas: Array<unknown>) => void;
 
 export default function getLogger(loggerName: string): LogFunction {
-    const log: LogFunction = (message, ...metas) =>
-        logImpl({ loggerName, message, metas });
-    return log;
+    return (message, ...metas) => logImpl({ loggerName, message, metas });
 }
