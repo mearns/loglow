@@ -1,0 +1,71 @@
+{
+  "name": "@loglow/core",
+  "version": "0.1.0",
+  "description": "$PROJECT_DESCRIPTION$",
+  "keywords": [],
+  "author": "Brian Mearns <mearns.b@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mearns/PROJECT-NAME.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mearns/PROJECT-NAME/issues"
+  },
+  "homepage": "https://github.com/mearns/PROJECT-NAME#readme",
+  "engines": {
+    "node": "^12.14.0"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*"
+  ],
+  "scripts": {
+    "clean": "rimraf dist/ build/ coverage/ .nyc_output/",
+    "pretty": "pretty-quick --staged",
+    "pretty-all": "prettier --write .src/**/*.ts ./test/**/*.js ./test/**/*.ts ./*.json ./*.yaml ./*.yml",
+    "check": "eslint src/ test/ --ext .js --ext .ts --format codeframe",
+    "compile": "tsc",
+    "test": "nyc npm run test-only",
+    "test-only": "mocha -r ts-node/register test/**/*.spec.*",
+    "verify": "npm run check && npm run test",
+    "build": "npm run clean && npm run compile && npm run verify",
+    "docs": "typedoc --out out/docs --mode file --includeVersion --exclude \"+(node_modules|dist|out)/**/*\" --includeDeclarations src",
+    "prepublishOnly": "rimraf node_modules && npm install && npm audit && npm run build && npm run docs"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "npm run pretty -s"
+    }
+  },
+  "devDependencies": {
+    "@types/chai": "^4.2.11",
+    "@types/node": "^14.0.12",
+    "@types/mocha": "^7.0.2",
+    "@types/sinon-chai": "^3.2.4",
+    "@typescript-eslint/eslint-plugin": "^3.2.0",
+    "@typescript-eslint/parser": "^3.2.0",
+    "chai": "^4.2.0",
+    "eslint": "^6.8.0",
+    "eslint-config-prettier": "^6.10.0",
+    "eslint-config-standard": "^14.1.0",
+    "eslint-plugin-import": "^2.20.1",
+    "eslint-plugin-node": "^11.0.0",
+    "eslint-plugin-prettier": "^3.1.2",
+    "eslint-plugin-promise": "^4.2.1",
+    "eslint-plugin-standard": "^4.0.1",
+    "husky": "^4.2.3",
+    "mocha": "^7.1.2",
+    "node": "^13.8.0",
+    "nyc": "^15.0.0",
+    "prettier": "^1.19.1",
+    "pretty-quick": "^2.0.1",
+    "sinon": "^9.0.2",
+    "sinon-chai": "^3.5.0",
+    "ts-node": "^8.10.2",
+    "typedoc": "^0.17.7",
+    "typescript": "^3.9.5"
+  },
+  "dependencies": {}
+}
