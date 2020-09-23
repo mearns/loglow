@@ -31,10 +31,10 @@
     "check:readme": "remark --no-stdout README.md",
     "check:code": "eslint ./ test/ --ext .js --ext .ts --format codeframe",
     "check": "npm run check:code && npm run check:readme",
-    "compile": "tsc",
-    "build": "npm run clean && npm run compile && npm run verify",
+    "build": "tsc",
+    "full-build": "npm run clean && npm run compile && npm run verify",
     "docs": "typedoc --out out/docs --mode file --includeVersion --exclude \"+(node_modules|dist|out)/**/*\" --includeDeclarations src",
-    "prepublishOnly": "rimraf node_modules && npm install && npm audit && npm run build && npm run docs"
+    "prepublishOnly": "rimraf node_modules && npm install && npm audit && npm run full-build && npm run docs"
   },
   "nyc": {
     "instrument": true,
@@ -88,8 +88,8 @@
     "typescript": "^3.8.2"
   },
   "dependencies": {
-    "@loglow/core": "file:../../core",
-    "@loglow/examples.lib": "file:../lib",
-    "@loglow/log": "file:../../log"
+    "@loglow/core": "~0.1.0",
+    "@loglow/log": "~0.1.0",
+    "@loglow/examples.lib": "~0.1.0"
   }
 }

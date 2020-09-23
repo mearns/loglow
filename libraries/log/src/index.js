@@ -16,7 +16,7 @@ function importCore() {
         console.log("Requiring");
         try {
             const core = require("@loglow/core");
-            console.log("Got it", core.logger.getLogger);
+            console.log("Got it", core.logging.getLogger);
             impl = core.logging.getLogger;
         } catch (error) {
             console.log("ERROR", error);
